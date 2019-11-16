@@ -1,0 +1,152 @@
+---
+title: "Horse Hill Weather"
+author: "Kieran Healy"
+date: "11/16/2019"
+output: html_document
+---
+
+# Horse Hill Weather Station Data
+
+## Setup, Libraries, Functions
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+library(rvest)
+library(scales)
+library(stringr)
+library(RColorBrewer)
+```
+
+
+## Plot theme and fonts
+```{r theme, message = FALSE}
+library(showtext)
+showtext_auto()
+library(myriad)
+import_myriad_semi()
+
+theme_set(theme_myriad_semi())
+```
+
+## To clean the data 
+```{r}
+remove_avs <- function(x){
+  str_remove(x, "Av:.*") 
+}
+
+get_varnames <- function(x){
+  str_extract(x, "^[a-zA-Z].+?\\n") %>%
+  as_vector() %>%
+  str_replace("Temperature", "Temp") %>%
+  str_replace("Precipitation", "Precip") %>%
+  str_replace("Sunshine", "Sun") %>%
+  str_replace("Direction", "Dir") %>%
+    str_replace("Degrees", "Deg") %>%  
+  str_replace("Minimum", "Min") %>%
+  str_replace("Maximum", "Max") %>%
+  str_replace("Average", "Ave") %>%
+  str_replace(" Radiation\\(W\\/m\\^2\\)", "") %>%
+  str_replace("hours", "hrs") %>%
+  str_replace("total", "tot") %>%
+  janitor::make_clean_names()  
+}
+
+make_table <- function(x){
+  read_table(file = as_vector(x), 
+             skip = 2, na = "-",
+             col_names = FALSE)
+}
+
+month_names <- c("Jan", "Feb", "Mar", "Apr", "May", 
+                 "June", "July", "Aug", "Sept", "Oct", "Nov", "Dec", "Annual")
+```
+
+## Scrape and Parse the Page
+
+```{r scrape}
+
+url <- "https://snell.zone/weather/weather.php"
+
+snell <- read_html(url)
+
+raw_data <- html_node(snell, "pre") %>%
+  rvest::html_text() %>%
+  str_split("\\n\\n") %>%
+  as_vector() %>%
+  purrr::discard(~ str_length(.x) < 20)
+  
+data <- map(raw_data, remove_avs)
+
+varnames <- map(data, get_varnames) %>% 
+  as_vector()
+
+names(data) <- varnames
+
+data <- map_dfr(data, 
+                   make_table, .id = "varname") 
+colnames(data) <- c("varname", "year", month_names)
+  
+weather <- data %>% select(-Annual) %>%
+  pivot_longer(Jan:Dec, names_to = "month") %>%
+  mutate(date = lubridate::ymd(paste(year, month, 15))) %>%
+  pivot_wider(names_from = varname, values_from = value)
+
+weather
+```
+
+## Graphs
+
+```{r, warning=FALSE}
+
+p_temps <- weather %>% 
+  filter(date > "2010-01-01") %>%
+  ggplot(mapping = aes(x = date, y = temp_f_ave, 
+                       ymin = temp_f_min,
+                       ymax = temp_f_max)) +
+  geom_ribbon(color = my.colors()[2], fill = my.colors()[2], alpha = 0.4) + 
+  geom_line(size = 1.1) + 
+  scale_x_date(NULL, breaks = scales::breaks_width("3 months"), 
+    labels = scales::label_date_short()) + 
+  labs(x = "Date", y = "Temperature (F)", title = "Temperatures")
+
+p_press <- weather %>% 
+  filter(date > "2010-01-01") %>%
+  ggplot(mapping = aes(x = date, y = pressure_in_hg_ave, 
+                       ymin = pressure_in_hg_min,
+                       ymax = pressure_in_hg_max)) +
+  geom_ribbon(color = my.colors()[3], fill = my.colors()[3], alpha = 0.4) + 
+  geom_line(size = 1.1) + 
+  scale_x_date(NULL, breaks = scales::breaks_width("3 months"), 
+    labels = scales::label_date_short()) + 
+  labs(x = "Date", y = "Air Pressure (hg)", title = "Air Pressure")
+
+p_rain <- weather %>% 
+  filter(date > "2010-01-01") %>%
+  ggplot(mapping = aes(x = date, y = precip_in_total)) +
+  geom_col(color = my.colors()[6], fill = my.colors()[6], alpha = 0.8) +
+  scale_x_date(NULL, breaks = scales::breaks_width("3 months"), 
+    labels = scales::label_date_short()) + 
+  labs(x = "Date", y = "Precipitation (in)", title = "Precipitation")
+
+p_frost <- weather %>% 
+  filter(date > "2010-01-01") %>%
+  ggplot(mapping = aes(x = date, y = frost_days)) +
+  geom_col(color = "gray30") +
+  scale_x_date(NULL, breaks = scales::breaks_width("3 months"), 
+    labels = scales::label_date_short()) + 
+  labs(x = "Date", y = "Frost Days", title = "Frost")
+```
+
+```{r, warning = FALSE, fig.height = 9, fig.width=20}
+library(cowplot)
+plot_grid(
+  p_temps, p_rain, p_press, p_frost,
+  labels = NULL, ncol = 1, 
+  rel_heights = c(0.4, 0.2, 0.4, 0.2)
+)
+
+```
+
+
+
+
