@@ -8,7 +8,7 @@ output: html_document
 # Horse Hill Weather Station Data
 
 ## Setup, Libraries, Functions
-```{r setup, include=FALSE}
+```{r setup}
 knitr::opts_chunk$set(echo = TRUE)
 library(tidyverse)
 library(rvest)
