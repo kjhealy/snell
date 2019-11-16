@@ -1,1 +1,0 @@
-# Six Colors Weather Station
